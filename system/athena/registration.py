@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import threading
 import time
 import json
 import jwt
@@ -42,12 +43,10 @@ def register(show_spinner=False, register_konik=False) -> str | None:
       spinner = Spinner()
       spinner.update("registering device")
 
-    # Create registration token, in the future, this key will make JWTs directly
     with open(Paths.persist_root()+"/comma/id_rsa.pub") as f1, open(Paths.persist_root()+"/comma/id_rsa") as f2:
       public_key = f1.read()
       private_key = f2.read()
 
-    # Block until we get the imei
     serial = HARDWARE.get_serial()
     start_time = time.monotonic()
     imei1: str | None = None
@@ -59,36 +58,41 @@ def register(show_spinner=False, register_konik=False) -> str | None:
         cloudlog.exception("Error getting imei, trying again...")
         time.sleep(1)
 
-      if time.monotonic() - start_time > 60 and show_spinner:
-        spinner.update(f"registering device - serial: {serial}, IMEI: ({imei1}, {imei2})")
+      if time.monotonic() - start_time > 5:
+        break
 
-    params.put("IMEI", imei1)
+    if imei1 is not None:
+      params.put("IMEI", imei1)
     params.put("HardwareSerial", serial)
 
-    backoff = 0
-    start_time = time.monotonic()
-    while True:
-      try:
-        register_token = jwt.encode({'register': True, 'exp': datetime.utcnow() + timedelta(hours=1)}, private_key, algorithm='RS256')
-        cloudlog.info("getting pilotauth")
-        resp = api_get("v2/pilotauth/", method='POST', timeout=15,
-                       imei=imei1, imei2=imei2, serial=serial, public_key=public_key, register_token=register_token)
+    if imei1 is not None:
+      backoff = 0
+      start_time = time.monotonic()
+      while True:
+        try:
+          register_token = jwt.encode({'register': True, 'exp': datetime.utcnow() + timedelta(hours=1)}, private_key, algorithm='RS256')
+          cloudlog.info("getting pilotauth")
+          resp = api_get("v2/pilotauth/", method='POST', timeout=15,
+                         imei=imei1, imei2=imei2, serial=serial, public_key=public_key, register_token=register_token)
 
-        if resp.status_code in (402, 403):
-          cloudlog.info(f"Unable to register device, got {resp.status_code}")
-          dongle_id = ''.join(random.choices(string.ascii_lowercase + string.digits, k=16))
-        else:
-          dongleauth = json.loads(resp.text)
-          dongle_id = dongleauth["dongle_id"]
-        break
-      except Exception:
-        cloudlog.exception("failed to authenticate")
-        backoff = min(backoff + 1, 15)
-        time.sleep(backoff)
+          if resp.status_code in (402, 403):
+            cloudlog.info(f"Unable to register device, got {resp.status_code}")
+            dongle_id = ''.join(random.choices(string.ascii_lowercase + string.digits, k=16))
+          else:
+            dongleauth = json.loads(resp.text)
+            dongle_id = dongleauth["dongle_id"]
+          break
+        except Exception:
+          cloudlog.exception("failed to authenticate")
+          backoff = min(backoff + 1, 15)
+          time.sleep(backoff)
 
-      if time.monotonic() - start_time > 60 and show_spinner:
-        dongle_id = UNREGISTERED_DONGLE_ID
-        break
+        if time.monotonic() - start_time > 15:
+          dongle_id = UNREGISTERED_DONGLE_ID
+          break
+    else:
+      dongle_id = ''.join(random.choices(string.ascii_lowercase + string.digits, k=16))
+      cloudlog.warning(f"No IMEI available, using temporary dongle_id: {dongle_id}")
 
     if show_spinner:
       spinner.close()
