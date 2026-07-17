@@ -13,6 +13,7 @@ from urllib.parse import quote_plus
 from openpilot.frogpilot.assets.download_functions import GITLAB_URL, download_file, get_repository_url, handle_error, handle_request_error, verify_download
 from openpilot.frogpilot.common.frogpilot_utilities import delete_file, extract_zip, load_json_file, update_json_file
 from openpilot.frogpilot.common.frogpilot_variables import ACTIVE_THEME_PATH, RANDOM_EVENTS_PATH, RESOURCES_REPO, THEME_SAVE_PATH, params, params_memory
+from openpilot.system.version import get_build_metadata
 
 CANCEL_DOWNLOAD_PARAM = "CancelThemeDownload"
 DOWNLOAD_PROGRESS_PARAM = "ThemeDownloadProgress"
@@ -45,6 +46,8 @@ THEME_COMPONENT_PARAMS = {
   "steering_wheels": "WheelToDownload"
 }
 
+DEFAULT_THEME_STAMP = THEME_SAVE_PATH / ".default_theme_commit"
+
 class ThemeManager:
   def __init__(self, boot_run=False):
     self.downloading_theme = False
@@ -76,6 +79,19 @@ class ThemeManager:
   def copy_default_theme():
     world_frog_day_theme_path = HOLIDAY_THEME_PATH / "world_frog_day"
 
+    theme_targets = [
+      THEME_SAVE_PATH / "theme_packs/frog/colors",
+      THEME_SAVE_PATH / "theme_packs/frog-animated/distance_icons",
+      THEME_SAVE_PATH / "theme_packs/frog-animated/icons",
+      THEME_SAVE_PATH / "theme_packs/frog/signals",
+      THEME_SAVE_PATH / "theme_packs/frog/sounds",
+      THEME_SAVE_PATH / "steering_wheels/frog.png",
+    ]
+    build_commit = get_build_metadata().openpilot.git_commit
+    default_theme_current = DEFAULT_THEME_STAMP.is_file() and DEFAULT_THEME_STAMP.read_text().strip() == build_commit
+    if default_theme_current and all(path.exists() for path in theme_targets):
+      return
+
     for theme_subfolder_name, save_subfolder_path in [
       ("colors", "theme_packs/frog/colors"),
       ("distance_icons", "theme_packs/frog-animated/distance_icons"),
@@ -92,6 +108,8 @@ class ThemeManager:
     steering_wheel_save_path = THEME_SAVE_PATH / "steering_wheels/frog.png"
     steering_wheel_save_path.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(steering_wheel_image_path, steering_wheel_save_path)
+
+    DEFAULT_THEME_STAMP.write_text(build_commit)
 
   def download_theme(self, theme_component, theme_name, asset_param, frogpilot_toggles):
     self.downloading_theme = True

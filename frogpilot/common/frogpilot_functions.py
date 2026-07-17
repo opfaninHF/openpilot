@@ -155,11 +155,9 @@ def frogpilot_boot_functions(build_metadata, params_cache):
   frogpilot_variables = FrogPilotVariables()
   ModelManager(boot_run=True)
   frogpilot_variables.update(holiday_theme="stock", started=False)
-  ThemeManager(boot_run=True).update_active_theme(time_validated=system_time_valid(), frogpilot_toggles=get_frogpilot_toggles(), boot_run=True)
-
-  if VIDEO_CACHE_PATH.exists():
-    for video in VIDEO_CACHE_PATH.glob("*.mp4"):
-      delete_file(video)
+  ThemeManager(boot_run=True).update_active_theme(
+    time_validated=system_time_valid(), frogpilot_toggles=frogpilot_variables.frogpilot_toggles, boot_run=True
+  )
 
   if use_konik_server():
     if params.get("KonikDongleId", encoding="utf8") != None:
@@ -171,6 +169,10 @@ def frogpilot_boot_functions(build_metadata, params_cache):
     params.remove("DongleId")
 
   def boot_thread():
+    if VIDEO_CACHE_PATH.exists():
+      for video in VIDEO_CACHE_PATH.glob("*.mp4"):
+        delete_file(video)
+
     while not system_time_valid():
       print("Waiting for system time to become valid...")
       time.sleep(1)

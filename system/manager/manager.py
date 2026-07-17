@@ -117,6 +117,11 @@ def manager_init() -> None:
                        dirty=build_metadata.openpilot.is_dirty,
                        device=HARDWARE.get_device_type())
 
+  # Start the native UI as soon as required params and registration are ready.
+  # Python preimports can continue while the UI initializes without advancing any onroad control process.
+  if os.getenv("PREPAREONLY") is None:
+    managed_processes["ui"].start()
+
   # preimport all processes
   for p in managed_processes.values():
     p.prepare()
