@@ -114,6 +114,16 @@ class CarController(CarControllerBase):
       self.apply_curvature_last = apply_ford_curvature_limits(apply_curvature, self.apply_curvature_last, current_curvature,
                                                               CS.out.vEgoRaw, 0., CC.latActive, self.CP)
 
+      # The Edge can keep applying curvature after a large turn while the driver is
+      # trying to unwind the wheel. Release Ford lateral control during an explicit
+      # high-angle driver takeover. Disabling the request (rather than commanding a
+      # step change while active) keeps this compatible with the current Panda angle
+      # rate safety checks. Control resumes from zero after the driver releases it.
+      lat_active = CC.latActive
+      if self.CP.carFingerprint == CAR.FORD_EDGE_MK2 and CS.out.steeringPressed and abs(CS.out.steeringAngleDeg) > 60.:
+        lat_active = False
+        self.apply_curvature_last = 0.
+
       if self.CP.flags & FordFlags.CANFD:
         # TODO: extended mode
         # Ford uses four individual signals to dictate how to drive to the car. Curvature alone (limited to 0.02m/s^2)
@@ -121,11 +131,11 @@ class CarController(CarControllerBase):
         # steer actuation, the other three signals are necessary. Ford controls vehicles differently than most other makes.
         # A detailed explanation on ford control can be found here:
         # https://www.f150gen14.com/forum/threads/introducing-bluepilot-a-ford-specific-fork-for-comma3x-openpilot.24241/#post-457706
-        mode = 1 if CC.latActive else 0
+        mode = 1 if lat_active else 0
         counter = (self.frame // CarControllerParams.STEER_STEP) % 0x10
         can_sends.append(fordcan.create_lat_ctl2_msg(self.packer, self.CAN, mode, 0., 0., -self.apply_curvature_last, 0., counter))
       else:
-        can_sends.append(fordcan.create_lat_ctl_msg(self.packer, self.CAN, CC.latActive, 0., 0., -self.apply_curvature_last, 0.))
+        can_sends.append(fordcan.create_lat_ctl_msg(self.packer, self.CAN, lat_active, 0., 0., -self.apply_curvature_last, 0.))
 
     # send lka msg at 33Hz
     if (self.frame % CarControllerParams.LKA_STEP) == 0:
