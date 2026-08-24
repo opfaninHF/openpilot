@@ -399,13 +399,7 @@ class CarController(CarControllerBase):
       # Measured path curvature (yaw). Used for limits and to hold state while lat inactive.
       current_curvature = -CS.out.yawRate / max(CS.out.vEgoRaw, 0.1)
 
-      lat_active = CC.latActive
-      # The Edge's EPS can keep pulling through a large post-turn steering correction.
-      # Release lateral control while the driver is actively taking over at a large wheel angle.
-      if self.CP.carFingerprint == CAR.FORD_EDGE_MK2 and CS.out.steeringPressed and abs(CS.out.steeringAngleDeg) > 60.:
-        lat_active = False
-
-      if not lat_active:
+      if not CC.latActive:
         # Safety requires inactive κ=0. Clear filters so re-engage does not replay a curve.
         self.apply_curvature_last = 0.0
         self.anti_overshoot_curvature_last = 0.0
@@ -423,7 +417,7 @@ class CarController(CarControllerBase):
         # When lat was just re-enabled, apply_curvature_last is 0 → blend up from zero
         # toward desired (which controlsd snapped to actual wheel during the pause).
         self.apply_curvature_last = apply_ford_curvature_limits(apply_curvature, self.apply_curvature_last, current_curvature,
-                                                                CS.out.vEgoRaw, 0., lat_active, self.CP)
+                                                                CS.out.vEgoRaw, 0., CC.latActive, self.CP)
 
       if self.CP.flags & FordFlags.CANFD:
         # TODO: extended mode
@@ -432,11 +426,11 @@ class CarController(CarControllerBase):
         # steer actuation, the other three signals are necessary. Ford controls vehicles differently than most other makes.
         # A detailed explanation on ford control can be found here:
         # https://www.f150gen14.com/forum/threads/introducing-bluepilot-a-ford-specific-fork-for-comma3x-openpilot.24241/#post-457706
-        mode = 1 if lat_active else 0
+        mode = 1 if CC.latActive else 0
         counter = (self.frame // CarControllerParams.STEER_STEP) % 0x10
         can_sends.append(fordcan.create_lat_ctl2_msg(self.packer, self.CAN, mode, 0., 0., -self.apply_curvature_last, 0., counter))
       else:
-        can_sends.append(fordcan.create_lat_ctl_msg(self.packer, self.CAN, lat_active, 0., 0., -self.apply_curvature_last, 0.))
+        can_sends.append(fordcan.create_lat_ctl_msg(self.packer, self.CAN, CC.latActive, 0., 0., -self.apply_curvature_last, 0.))
 
     # send lka msg at 33Hz
     if (self.frame % CarControllerParams.LKA_STEP) == 0:
