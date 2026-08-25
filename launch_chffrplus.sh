@@ -47,7 +47,11 @@ function launch {
   # 2. The FINALIZED consistent file has to exist, indicating there's an update
   #    that completed successfully and synced to disk.
 
-  if [ -f "${DIR}/.overlay_init" ]; then
+  # This C3 branch builds native binaries and its project venv on the device.
+  # The standard finalized overlay does not preserve those untracked artifacts,
+  # which can leave the next boot stuck on the comma logo. Keep automatic
+  # overlay swaps disabled; URL/SSH installs remain the supported update path.
+  if [[ "${ENABLE_C3_OVERLAY_UPDATES:-0}" == "1" ]] && [ -f "${DIR}/.overlay_init" ]; then
     find ${DIR}/.git -newer ${DIR}/.overlay_init | grep -q '.' 2> /dev/null
     if [ $? -eq 0 ]; then
       echo "${DIR} has been modified, skipping overlay update installation"
@@ -82,6 +86,13 @@ function launch {
   # Python packages such as jeepney, which the Wi-Fi UI imports at startup.
   if [ -f /AGNOS ]; then
     VENV_READY="$DIR/.venv/.dependencies_ready"
+
+    # An interrupted installer/updater may leave the venv owned by root. Repair
+    # it before uv tries to clear or update the environment on the next boot.
+    if [[ -d "$DIR/.venv" ]] && [[ ! -w "$DIR/.venv" ]]; then
+      sudo chown -R "$(id -u):$(id -g)" "$DIR/.venv"
+    fi
+
     if [[ ! -x "$DIR/.venv/bin/python" ]] || [[ ! -s "$VENV_READY" ]] || \
        ! "$DIR/.venv/bin/python" -c "import jeepney" >/dev/null 2>&1; then
       rm -f "$DIR/prebuilt"
