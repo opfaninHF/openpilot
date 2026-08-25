@@ -57,10 +57,14 @@ COMFORT_BRAKE = 2.5
 STOP_DISTANCE = 6.0
 CRUISE_MIN_ACCEL = -1.2
 CRUISE_MAX_ACCEL = 1.6
+A_CRUISE_MAX_BP = [0., 10.0, 25., 40.]
+TRAFFIC_MODE_T_FOLLOW_BP = [0., 25.0]
+TRAFFIC_MODE_T_FOLLOW_VALS = [0.5, 1.25]
 
 def get_jerk_factor(personality=log.LongitudinalPersonality.standard):
   if personality==log.LongitudinalPersonality.relaxed:
-    return 1.0
+    # Match sp-master260727 comfort mode.
+    return 1.5
   elif personality==log.LongitudinalPersonality.standard:
     return 1.0
   elif personality==log.LongitudinalPersonality.aggressive:
@@ -69,15 +73,46 @@ def get_jerk_factor(personality=log.LongitudinalPersonality.standard):
     raise NotImplementedError("Longitudinal personality not supported")
 
 
-def get_T_FOLLOW(personality=log.LongitudinalPersonality.standard):
+def get_T_FOLLOW(personality=log.LongitudinalPersonality.standard, v_ego=None):
   if personality==log.LongitudinalPersonality.relaxed:
     return 1.75
   elif personality==log.LongitudinalPersonality.standard:
     return 1.45
   elif personality==log.LongitudinalPersonality.aggressive:
+    # Match FrogPilot traffic mode: 0.5 s at standstill, ramping to the
+    # aggressive 1.25 s headway at 25 m/s (about 90 km/h).
+    if v_ego is not None:
+      return float(np.interp(v_ego, TRAFFIC_MODE_T_FOLLOW_BP, TRAFFIC_MODE_T_FOLLOW_VALS))
     return 1.25
   else:
     raise NotImplementedError("Longitudinal personality not supported")
+
+
+def get_max_accel(v_ego, personality=log.LongitudinalPersonality.standard):
+  if personality == log.LongitudinalPersonality.relaxed:
+    values = [1.0, 0.85, 0.65, 0.50]
+  else:
+    # Standard remains unchanged. Aggressive intentionally uses the same
+    # acceleration ceiling as FrogPilot traffic mode.
+    values = [1.6, 1.2, 0.8, 0.6]
+  return float(np.interp(v_ego, A_CRUISE_MAX_BP, values))
+
+
+def get_cruise_min_accel(personality=log.LongitudinalPersonality.standard):
+  return -1.0 if personality == log.LongitudinalPersonality.relaxed else CRUISE_MIN_ACCEL
+
+
+def get_cruise_max_accel(personality=log.LongitudinalPersonality.standard):
+  return 1.0 if personality == log.LongitudinalPersonality.relaxed else CRUISE_MAX_ACCEL
+
+
+def get_accel_slew_rate(personality=log.LongitudinalPersonality.standard):
+  return 0.03 if personality == log.LongitudinalPersonality.relaxed else 0.05
+
+
+def get_start_accel(personality, base_start_accel):
+  factor = 0.55 if personality == log.LongitudinalPersonality.relaxed else 1.0
+  return float(base_start_accel * factor)
 
 def get_stopped_equivalence_factor(v_lead):
   return (v_lead**2) / (2 * COMFORT_BRAKE)
@@ -328,8 +363,8 @@ class LongitudinalMpc:
     return lead_xv
 
   def update(self, radarstate, v_cruise, x, v, a, j, personality=log.LongitudinalPersonality.standard):
-    t_follow = get_T_FOLLOW(personality)
     v_ego = self.x0[1]
+    t_follow = get_T_FOLLOW(personality, v_ego)
     self.status = radarstate.leadOne.status or radarstate.leadTwo.status
 
     lead_xv_0 = self.process_lead(radarstate.leadOne)
@@ -350,9 +385,11 @@ class LongitudinalMpc:
 
       # Fake an obstacle for cruise, this ensures smooth acceleration to set speed
       # when the leads are no factor.
-      v_lower = v_ego + (T_IDXS * CRUISE_MIN_ACCEL * 1.05)
+      cruise_min = get_cruise_min_accel(personality)
+      cruise_max = get_cruise_max_accel(personality)
+      v_lower = v_ego + (T_IDXS * cruise_min * 1.05)
       # TODO does this make sense when max_a is negative?
-      v_upper = v_ego + (T_IDXS * CRUISE_MAX_ACCEL * 1.05)
+      v_upper = v_ego + (T_IDXS * cruise_max * 1.05)
       v_cruise_clipped = np.clip(v_cruise * np.ones(N+1),
                                  v_lower,
                                  v_upper)
