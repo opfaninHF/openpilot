@@ -159,8 +159,10 @@ function fetch_vendored_package() {
 function install_vendored_python_packages() {
   local -a packages=("${VENDORED_PACKAGES[@]}")
   mkdir -p /data/tmp/uv-tmp
+  mkdir -p /data/tmp/uv-cache
   export TMPDIR=/data/tmp/uv-tmp
   export UV_TMPDIR=/data/tmp/uv-tmp
+  export UV_CACHE_DIR=/data/tmp/uv-cache
   ensure_build_tools
 
   # AGNOS 16 ships pyray/raylib in /usr/local/venv for EGL UI.
@@ -176,7 +178,8 @@ function install_vendored_python_packages() {
   if [[ -d "$DEPS_DIR/native_wheels" ]] && compgen -G "$DEPS_DIR/native_wheels/*.whl" > /dev/null; then
     bootstrap_msg "20% Installing native packages from prebuilt wheels..."
     echo "installing vendored native packages from deps/native_wheels/..."
-    if retry 3 uv pip install --no-index --find-links "$DEPS_DIR/native_wheels" "$DEPS_DIR/native_wheels"/*.whl --no-build-isolation; then
+    if retry 3 uv pip install --no-index --find-links "$DEPS_DIR/native_wheels" --find-links "$DEPS_DIR/wheels" \
+      "$DEPS_DIR/native_wheels"/*.whl --no-build-isolation; then
       return 0
     fi
     echo "  prebuilt native wheels install failed, falling back to source build" >&2
@@ -309,8 +312,10 @@ function install_python_deps() {
   fi
 
   mkdir -p /data/tmp/uv-tmp
+  mkdir -p /data/tmp/uv-cache
   export TMPDIR=/data/tmp/uv-tmp
   export UV_TMPDIR=/data/tmp/uv-tmp
+  export UV_CACHE_DIR=/data/tmp/uv-cache
   ensure_build_tools
 
   echo "creating venv with system python..."
@@ -324,7 +329,12 @@ function install_python_deps() {
   source "$ROOT/.venv/bin/activate"
 
   echo "bootstrapping python build tooling..."
-  if ! retry 5 uv pip install setuptools wheel Cython scons fonttools hatchling editables; then
+  if is_agnos_device && [[ -d "$DEPS_DIR/wheels" ]]; then
+    if ! retry 3 uv pip install --no-index --find-links "$DEPS_DIR/wheels" \
+      setuptools wheel Cython scons fonttools hatchling editables numpy; then
+      return 1
+    fi
+  elif ! retry 5 uv pip install setuptools wheel Cython scons fonttools hatchling editables; then
     return 1
   fi
 
@@ -406,8 +416,8 @@ elif [[ "$OSTYPE" == "darwin"* ]]; then
 fi
 
 if [ -f "$ROOT/pyproject.toml" ]; then
-  install_python_deps
-  build_native_openpilot
+  install_python_deps || exit 1
+  build_native_openpilot || exit 1
   bootstrap_msg "100% Dependencies installed"
   echo "[ ] installed python dependencies t=$SECONDS"
 fi

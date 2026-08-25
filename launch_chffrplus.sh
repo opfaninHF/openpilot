@@ -23,8 +23,14 @@ function agnos_init {
     MANIFEST="$DIR/system/hardware/tici/agnos.json"
     if $AGNOS_PY --verify "$MANIFEST"; then
       sudo reboot
+      exit 0
     fi
-    "$DIR/system/hardware/tici/updater" "$AGNOS_PY" "$MANIFEST"
+    if ! "$DIR/system/hardware/tici/updater" "$AGNOS_PY" "$MANIFEST"; then
+      echo "Graphical AGNOS updater failed; falling back to the headless updater" >&2
+      "$AGNOS_PY" --swap "$MANIFEST"
+      sudo reboot
+      exit 0
+    fi
   fi
 }
 
@@ -70,14 +76,6 @@ function launch {
   ln -sfn $(pwd) /data/pythonpath
   export PYTHONPATH="$PWD"
 
-  # hardware specific init
-  if [ -f /AGNOS ]; then
-    agnos_init
-    "$DIR/tools/stage_acados.sh"
-    # C3 shared USB hub: keep LTE USB unconfigured until panda is stable
-    python3 -c "from openpilot.system.hardware.tici.modem_usb import defer_modem_usb; defer_modem_usb()" || true
-  fi
-
   # A fresh C3 install only has the AGNOS system Python environment. Install the
   # repository's vendored dependencies once, then keep manager and all child
   # processes on the project venv. Native compilation alone does not install
@@ -99,6 +97,14 @@ function launch {
   elif [[ -f "$DIR/.venv/bin/activate" ]]; then
     # shellcheck disable=SC1091
     source "$DIR/.venv/bin/activate"
+  fi
+
+  # hardware specific init
+  if [ -f /AGNOS ]; then
+    agnos_init
+    "$DIR/tools/stage_acados.sh"
+    # C3 shared USB hub: keep LTE USB unconfigured until panda is stable
+    python3 -c "from openpilot.system.hardware.tici.modem_usb import defer_modem_usb; defer_modem_usb()" || true
   fi
 
   # write tmux scrollback to a file

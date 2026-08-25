@@ -15,9 +15,9 @@ export FPS=20
 # ui runs at 20fps (50ms frame budget), with enough headroom to preempt model workloads.
 export QCOM_PRIORITY=12
 
-# Comma 3 (tici) and this fork target AGNOS 16.
+# Comma 3 (tici) and this fork's bundled manifest target AGNOS 18.4.
 if [ -z "$AGNOS_VERSION" ]; then
-  export AGNOS_VERSION="16"
+  export AGNOS_VERSION="18.4"
 fi
 
 export STAGING_ROOT="/data/safe_staging"
