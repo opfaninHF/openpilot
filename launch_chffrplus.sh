@@ -78,6 +78,29 @@ function launch {
     python3 -c "from openpilot.system.hardware.tici.modem_usb import defer_modem_usb; defer_modem_usb()" || true
   fi
 
+  # A fresh C3 install only has the AGNOS system Python environment. Install the
+  # repository's vendored dependencies once, then keep manager and all child
+  # processes on the project venv. Native compilation alone does not install
+  # Python packages such as jeepney, which the Wi-Fi UI imports at startup.
+  if [ -f /AGNOS ]; then
+    VENV_READY="$DIR/.venv/.dependencies_ready"
+    if [[ ! -x "$DIR/.venv/bin/python" ]] || [[ ! -s "$VENV_READY" ]] || \
+       ! "$DIR/.venv/bin/python" -c "import jeepney" >/dev/null 2>&1; then
+      rm -f "$DIR/prebuilt"
+      if ! "$DIR/tools/setup_dependencies.sh"; then
+        echo "ERROR: failed to install openpilot dependencies" >&2
+        exit 1
+      fi
+      date -u +"%Y-%m-%dT%H:%M:%SZ" > "$VENV_READY"
+    fi
+
+    # shellcheck disable=SC1091
+    source "$DIR/.venv/bin/activate"
+  elif [[ -f "$DIR/.venv/bin/activate" ]]; then
+    # shellcheck disable=SC1091
+    source "$DIR/.venv/bin/activate"
+  fi
+
   # write tmux scrollback to a file
   tmux capture-pane -pq -S-1000 > /tmp/launch_log
 
