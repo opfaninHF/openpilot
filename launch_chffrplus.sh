@@ -94,6 +94,14 @@ function launch {
 
     # shellcheck disable=SC1091
     source "$DIR/.venv/bin/activate"
+
+    # The AGNOS UI packages live in its own /usr/local/venv. A project venv
+    # cannot inherit packages from another venv through pyvenv.cfg, so expose
+    # that read-only site-packages directory to manager and its child processes.
+    AGNOS_SITE_PACKAGES="$(/usr/local/venv/bin/python -c 'import site; print(site.getsitepackages()[0])' 2>/dev/null)"
+    if [[ -d "$AGNOS_SITE_PACKAGES" ]]; then
+      export PYTHONPATH="$PYTHONPATH:$AGNOS_SITE_PACKAGES"
+    fi
   elif [[ -f "$DIR/.venv/bin/activate" ]]; then
     # shellcheck disable=SC1091
     source "$DIR/.venv/bin/activate"
