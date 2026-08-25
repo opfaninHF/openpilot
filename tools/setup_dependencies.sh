@@ -320,8 +320,8 @@ function install_python_deps() {
 
   echo "creating venv with system python..."
   local venv_args=(--python "$py_bin" --clear)
-  if is_agnos_device && [[ "$(agnos_version)" == "16" ]]; then
-    # AGNOS ships pyray in /usr/local/venv; needed for font build during scons.
+  if is_agnos_device; then
+    # AGNOS ships hardware/UI packages such as pyray in /usr/local/venv.
     venv_args+=(--system-site-packages)
   fi
   uv venv "${venv_args[@]}"

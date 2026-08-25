@@ -52,7 +52,10 @@ class _VendoredAcados:
 
 if arch == "larch64":
   acados = _VendoredAcados()
-  pkgs = []
+  # AGNOS keeps the base image read-only. Native dependencies are installed
+  # from the repository's offline wheels into the project venv, so include
+  # their headers and libraries when compiling directly on a comma 3.
+  pkgs = [importlib.import_module(name) for name in pkg_names if name != 'acados']
 else:
   pkgs = [importlib.import_module(name) for name in pkg_names]
   acados = pkgs[pkg_names.index('acados')]
