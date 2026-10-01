@@ -23,9 +23,11 @@ FW_VERSIONS_EXT = {
     ],
     (Ecu.fwdRadar, 0x764, None): [
       b'JX7T-14D049-AD\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00',
+      b'LB5T-14D049-AB\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00',
     ],
     (Ecu.fwdCamera, 0x706, None): [
       b'KT4T-14F397-AF\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00',
+      b'MK7T-14F397-AB\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00',
     ],
   },
   CAR.FORD_MONDEO_MK5: {
