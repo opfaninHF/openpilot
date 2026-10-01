@@ -195,7 +195,11 @@ class TogglesLayout(Widget):
 
         self._toggles["ExperimentalMode"].set_description("<b>" + long_desc + "</b><br><br>" + e2e_description)
     else:
-      self._toggles["ExperimentalMode"].set_description(e2e_description)
+      # No vehicle information yet: do not offer a toggle that constraints will clear.
+      self._toggles["ExperimentalMode"].action_item.set_enabled(False)
+      self._long_personality_setting.action_item.set_enabled(False)
+      self._toggles["ExperimentalMode"].set_description(
+        tr("Connect to your vehicle to determine whether longitudinal control is available.") + "<br><br>" + e2e_description)
 
     self._update_experimental_mode_icon()
 

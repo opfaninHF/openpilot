@@ -7,6 +7,10 @@
 //#define DEBUG_USB
 //#define DEBUG_SPI
 //#define DEBUG_FAULTS
+#if defined(STM32F4) && !defined(BOOTSTUB)
+// Temporary DOS/F4 diagnostics: report the divergent register without disabling checks.
+#define DEBUG_FAULTS
+#endif
 //#define DEBUG_COMMS
 //#define DEBUG_FAN
 
