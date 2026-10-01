@@ -52,7 +52,8 @@ class _VendoredAcados:
 
 if arch == "larch64":
   acados = _VendoredAcados()
-  pkgs = []
+  # AGNOS 18.4 ships build dependencies in the Python environment, not /usr/include.
+  pkgs = [importlib.import_module(name) for name in pkg_names if name != 'acados']
 else:
   pkgs = [importlib.import_module(name) for name in pkg_names]
   acados = pkgs[pkg_names.index('acados')]
