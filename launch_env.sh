@@ -15,14 +15,14 @@ export FPS=20
 # ui runs at 20fps (50ms frame budget), with enough headroom to preempt model workloads.
 export QCOM_PRIORITY=12
 
-# Comma 3 (tici) and this fork target AGNOS 16.
+# Must match the AGNOS 18.4 images in system/hardware/tici/agnos.json.
 if [ -z "$AGNOS_VERSION" ]; then
-  export AGNOS_VERSION="16"
+  export AGNOS_VERSION="18.4"
 fi
 
 export STAGING_ROOT="/data/safe_staging"
 
-# AGNOS 16's runtime python (/usr/local/venv) may be missing pure-python deps
+# AGNOS's runtime python (/usr/local/venv) may be missing pure-python deps
 # that this fork ships in deps/wheels (e.g. jeepney for wifi_manager), which
 # crashes the UI import chain. Install them offline on boot if missing (one-shot).
 if [[ -f /AGNOS ]] && [[ -x /usr/local/venv/bin/python3.12 ]] && \
