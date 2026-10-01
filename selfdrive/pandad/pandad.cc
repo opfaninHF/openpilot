@@ -462,7 +462,7 @@ void pandad_run(Panda *panda) {
     // Forward logs from panda to cloudlog if available
     std::string log = panda->serial_read();
     if (!log.empty()) {
-      if (log.find("Register 0x") != std::string::npos) {
+      if (log.find("Register 0x") != std::string::npos || log.find("is divergent") != std::string::npos) {
         // Log register divergent faults as errors
         LOGE("%s", log.c_str());
       } else {
