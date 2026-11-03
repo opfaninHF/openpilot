@@ -111,7 +111,7 @@ _STEER_DT = CarControllerParams.STEER_STEP * DT_CTRL  # 20 Hz lateral tick (matc
 # Must stay <= ford.h's FORD_BP_SHADOW_MAX_ANGLE_ERROR (400 CAN units = 0.008 1/m).
 _ANGLE_KAPPA_DEVIATION = 0.005  # default clip; live value from FordAngleDeviationClip param
 # Sharp-curve boost ratio on top of the base gain (1.60 / 1.25 = 1.28). Fixed; only the base
-# (FordAngleBaseGain) is user-tunable.
+# (FordAngleBaseGain, default 1.10) is user-tunable.
 # 2026-08-30: 1.28 -> 1.20 — reduce apex overshoot / inside cutting on sharp multi-lane turns.
 _ANGLE_GAIN_HIGH_C_RATIO = 1.20
 _STALL_HOLD_S = 0.5          # accumulated clip-binding time before a pulse fires
@@ -158,12 +158,16 @@ class LateralAngleExt:
     self.high_speed_curv_factor = 1.0
     self.user_dampening_factor = 1.0
     # User-tunable angle-mode base gain + deviation clip (read from Params in update_angle_params).
-    self.angle_base_gain = 1.25
+    self.angle_base_gain = 1.10
     self.angle_deviation_clip = _ANGLE_KAPPA_DEVIATION
     self.lane_center_trim = LaneCenterTrim()
     self.enable_lane_positioning_ang = False
     self.custom_path_offset_ang = 0.0
     self.lane_centering_strength_ang = 0.25
+    # BluePilot: Blendful (alpha) curvature nudge published by modeld_v2 (see blendful_delta).
+    self.blendful_enabled = False
+    self.blendful_curvature = 0.0
+    self.blendful_trust = 0.0
     # BluePilot: angle mode's own lane-change scaling factor, independent of curvature mode's
     # lane_change_factor_high_curv -- angle needs a boost (>1) where curvature needs a cut (<1).
     self.lane_change_factor_high_ang = 1.0
@@ -187,6 +191,17 @@ class LateralAngleExt:
     self.stall_blip_count = 0         # pulses fired this stall episode
     self.angle_stall_blip_active = False
     self.press_timer_s = 0.0          # continuous steeringPressed time, for the hand-off blip
+
+  def blendful_delta(self, CS) -> float:
+    """BluePilot: Blendful curvature nudge to add this frame.
+
+    Zero unless the toggle is on, the model still trusts its lane fit, the model is not changing
+    lanes and the driver is not signalling.
+    """
+    if (self.blendful_enabled and self.blendful_trust > 0.05 and not self.lane_change and
+        not (CS.out.leftBlinker or CS.out.rightBlinker)):
+      return self.blendful_curvature
+    return 0.0
 
   def update_angle_params(self, params):
     """Sets per-platform gain defaults and reads user angle-tuning params."""
@@ -222,6 +237,10 @@ class LateralAngleExt:
         pass
       try:
         self.enable_lane_positioning_ang = bool(params.get_bool("enable_lane_positioning_ang"))
+      except Exception:
+        pass
+      try:
+        self.blendful_enabled = bool(params.get_bool("Blendful"))
       except Exception:
         pass
       for attr, key, min_value, max_value in (
@@ -484,6 +503,11 @@ class LateralAngleExt:
     # band, but angle mode's shadow-curvature check is a separate, looser
     # band (FORD_BP_SHADOW_MAX_ANGLE_ERROR = 0.008 in ford.h). The clip is user-tunable
     # (FordAngleDeviationClip): too tight -> curve-entry understeer; too loose -> entry overshoot.
+    # BluePilot: Blendful (alpha) lane-centering nudge, computed in modeld_v2 from the raw model
+    # outputs. Added here -- before the measured-curvature deviation clip -- so it inherits the same
+    # clip, rate limits and PSCM/DBC clamps as the rest of the curvature command.
+    kappa_cmd += self.blendful_delta(CS)
+
     current_curvature = self.get_current_curvature(CS)
     self.bp_curvature_deviation_limited = False
     if v_ego > 9:
@@ -498,7 +522,7 @@ class LateralAngleExt:
 
 
 
-    # Speed-interpolated gain: at low speed the base is FordAngleBaseGain (default 1.25); at high
+    # Speed-interpolated gain: at low speed the base is FordAngleBaseGain (default 1.10); at high
     # speed the params take effect. κ·v·gain implies a lookahead of v·gain metres; the PSCM needs a
     # slightly longer effective lookahead than 1.0 s at these speeds. 1.0/1.30 understeered; 1.5/1.95
     # over-corrected (line-cutting / lane runout). Tune FordAngleBaseGain on-road.

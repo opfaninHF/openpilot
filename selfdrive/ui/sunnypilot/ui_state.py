@@ -25,6 +25,17 @@ class OnroadTimerStatus(Enum):
 
 
 class UIStateSP:
+  @staticmethod
+  def lateral_active(_ui_state) -> bool:
+    """Whether lateral control is engaged right now (MADS-aware)."""
+    if _ui_state.sm.valid.get("selfdriveStateSP", False):
+      mads = _ui_state.sm["selfdriveStateSP"].mads
+      # only trust MADS while it actually drives lateral; otherwise fall back to the
+      # openpilot status, which is still what engages with MADS turned off
+      if mads.available and mads.enabled:
+        return mads.state != MADSState.paused
+    return _ui_state.status.value in ("engaged", "lat_only")
+
   def __init__(self):
     self.params = Params()
     self.CP_SP: custom.CarParamsSP | None = None
@@ -32,12 +43,14 @@ class UIStateSP:
     self.is_sp_release: bool = self.params.get_bool("IsReleaseSpBranch")
     self.sm_services_ext = [
       "modelManagerSP", "selfdriveStateSP", "longitudinalPlanSP", "backupManagerSP",
-      "gpsLocation", "liveTorqueParameters", "carStateSP", "liveMapDataSP", "carParamsSP", "liveDelay"
+      "gpsLocation", "liveTorqueParameters", "carStateSP", "liveMapDataSP", "carParamsSP", "liveDelay",
+      "modelDataV2SP"
     ]
 
     self.sunnylink_state = SunnylinkState()
 
     self.active_bundle = None
+    self.active_runner_tinygrad: bool = False
     self.blindspot: bool = False
     self.chevron_metrics = None
     self.custom_interactive_timeout: int = 0
@@ -146,6 +159,8 @@ class UIStateSP:
 
     self._enforce_constraints()
     self.active_bundle = self.params.get("ModelManager_ActiveBundle")
+    # runner the manager launches; Blendful only exists in the tinygrad modeld (modeld_v2)
+    self.active_runner_tinygrad = self.params.get("ModelRunnerTypeCache") == custom.ModelManagerSP.Runner.tinygrad
     self.blindspot = self.params.get_bool("BlindSpot")
     self.chevron_metrics = self.params.get("ChevronInfo")
     self.custom_interactive_timeout = self.params.get("InteractivityTimeout", return_default=True)
