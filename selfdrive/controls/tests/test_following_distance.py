@@ -47,7 +47,7 @@ class TestFollowingDistance:
 
 
 @pytest.mark.parametrize(("personality", "expected_t_follow"), [
-  (log.LongitudinalPersonality.aggressive, 1.00),
+  (log.LongitudinalPersonality.aggressive, 0.80),
   (log.LongitudinalPersonality.standard, 1.30),
   (log.LongitudinalPersonality.steady, 1.50),
   (log.LongitudinalPersonality.relaxed, 1.70),
