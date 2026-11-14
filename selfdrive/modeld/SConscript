@@ -71,71 +71,25 @@ tg_devices_node = lenv.Command(
   write_tg_devices,
 )
 
-# tinygrad calls brew which needs a $HOME in the env
-mac_brew_string = f'HOME={os.path.expanduser("~")}' if arch == 'Darwin' else ''
+# 1112 stock modeld expects native OOB artifacts, not the old paired ONNX build.
+from openpilot.system.camerad.cameras.nv12_info import get_nv12_info
 
-modeld_dir = Dir("#selfdrive/modeld").abspath
-compile_modeld_script = [
-  File(f"{modeld_dir}/compile_modeld.py"),
-  File(f"{modeld_dir}/get_model_metadata.py"),
-  File("#system/camerad/cameras/nv12_info.py"),
-  File("#system/hardware/hw.py"),
-]
-model_w, model_h = MEDMODEL_INPUT_SIZE
-frame_skip = ModelConstants.MODEL_RUN_FREQ // ModelConstants.MODEL_CONTEXT_FREQ
+compiler = Dir('#tinygrad_repo/examples/openpilot').abspath
+lenv.PrependENVPath('PYTHONPATH', Dir('#tinygrad_repo').abspath)
+download = File('fetch_stock_oob.py').abspath
+for key, name in [('drive', 'driving_tinygrad.pkl'), ('dm', 'dmonitoring_model_tinygrad.pkl')]:
+  dest = File(f'models/{name}').abspath
+  lenv.Command(dest, [download], f'python3 "{download}" {key} "{dest}"')
 
-for usbgpu in [False, True] if USBGPU else [False]:
-  target_pkl_path = File(modeld_pkl_path(usbgpu)).abspath
-  file_prefix, cmd_flags = ('big_', usbgpu_tg_flags) if usbgpu else ('', tg_flags)
-  driving_onnx_deps = [p for m in [f'{file_prefix}driving_vision', f'{file_prefix}driving_on_policy']
-                       for p in get_existing_chunks(File(f"models/{m}.onnx").abspath)]
-  camera_res_args = ' '.join(f'{cw}x{ch}' for cw, ch in CAMERA_CONFIGS)
-  cmd = (f'{cmd_flags} {mac_brew_string} python3 {modeld_dir}/compile_modeld.py '
-        f'--model-size {model_w}x{model_h} '
-        f'--camera-resolutions {camera_res_args} '
-        f'--vision-onnx {File(f"models/{file_prefix}driving_vision.onnx").abspath} '
-        f'--on-policy-onnx {File(f"models/{file_prefix}driving_on_policy.onnx").abspath} '
-        f'--output {target_pkl_path} --frame-skip {frame_skip}')
-  onnx_sizes_sum = sum(os.path.getsize(f) for f in driving_onnx_deps)
-  chunk_targets = get_chunk_targets(target_pkl_path, estimate_pickle_max_size(onnx_sizes_sum))
-  def do_chunk(target, source, env, pkl=target_pkl_path, chunks=chunk_targets):
-    chunk_file(pkl, chunks)
-  node = lenv.Command(
-    chunk_targets,
-    tinygrad_files + compile_modeld_script + driving_onnx_deps + [Value(chunk_targets), chunker_file],
-    [cmd, Action(do_chunk, "  [CHUNK] $TARGET")],
-  )
-  if usbgpu:
-    lenv.SideEffect(usbgpu_lock, node)
-
-# get model metadata
-fn = File(f"models/dmonitoring_model").abspath
-script_files = [File(Dir("#selfdrive/modeld").File("get_model_metadata.py").abspath)]
-cmd = f'{tg_flags} {mac_brew_string} python3 {Dir("#selfdrive/modeld").abspath}/get_model_metadata.py {fn}.onnx'
-lenv.Command(fn + "_metadata.pkl", [fn + ".onnx"] + tinygrad_files + script_files + [tg_devices_node], cmd)
-
-dm_w, dm_h = DM_INPUT_SIZE
-compile_dm_warp_script = [File(f"{modeld_dir}/compile_dm_warp.py")]
+warp_script = f'{compiler}/compile_warp.py'
 for cam_w, cam_h in CAMERA_CONFIGS:
-  dm_pkl_path = File(f"models/dm_warp_{cam_w}x{cam_h}_tinygrad.pkl").abspath
-  cmd = (f'{tg_flags} {mac_brew_string} python3 {modeld_dir}/compile_dm_warp.py '
-         f'--camera-resolution {cam_w}x{cam_h} --warp-to {dm_w}x{dm_h} '
-         f'--output {dm_pkl_path}')
-  lenv.Command(dm_pkl_path, tinygrad_files + compile_dm_warp_script + compile_modeld_script + [tg_devices_node], cmd)
-
-def tg_compile(flags, model_name):
-  pythonpath_string = 'PYTHONPATH="${PYTHONPATH}:' + env.Dir("#tinygrad_repo").abspath + '"'
-  fn = File(f"models/{model_name}").abspath
-  pkl = fn + "_tinygrad.pkl"
-  onnx_path = fn + ".onnx"
-  chunk_targets = get_chunk_targets(pkl, estimate_pickle_max_size(os.path.getsize(onnx_path)))
-  def do_chunk(target, source, env):
-    chunk_file(pkl, chunk_targets)
-  return lenv.Command(
-    chunk_targets,
-    [onnx_path] + tinygrad_files + [Value(chunk_targets), chunker_file, tg_devices_node],
-    [f'{pythonpath_string} {flags} python3 {Dir("#tinygrad_repo").abspath}/examples/openpilot/compile3.py {fn}.onnx {pkl}',
-     Action(do_chunk, "  [CHUNK] $TARGET")],
-  )
-
-tg_compile(tg_flags, 'dmonitoring_model')
+  stride, yh, uvh, frame_size = get_nv12_info(cam_w, cam_h)
+  for prefix, dims, size, flags in [
+    ('driving', MEDMODEL_INPUT_SIZE, stride * (yh + uvh), '--layout yuv420 --frames 2'),
+    ('dm', DM_INPUT_SIZE, frame_size, '--layout luma --border-fill 16 --transform-device NPY'),
+  ]:
+    w, h = dims
+    dest = File(f'models/{prefix}_warp_{cam_w}x{cam_h}_tinygrad.pkl').abspath
+    cmd = (f'{tg_flags} python3 "{warp_script}" --frame {cam_w},{cam_h},{stride},{yh},{uvh},{size} '
+           f'--warp-to {w}x{h} {flags} --benchmark-runs 1 --output "{dest}"')
+    lenv.Command(dest, tinygrad_files + [File("#system/camerad/cameras/nv12_info.py"), Value(cmd), tg_devices_node], cmd)

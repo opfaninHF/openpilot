@@ -68,6 +68,14 @@ class BaseModelAdapter:
 
     warp_name = f'{"big_" if self.chestnut else ""}driving_warp_{self.cam_w}x{self.cam_h}_tinygrad.pkl'
     warp_path = Path(__file__).resolve().parent / 'models' / warp_name
+    if self.is_native and not self.chestnut and not warp_path.is_file():
+      # TICI builds the same native warp for stock and custom driving models.
+      from openpilot.selfdrive.modeld.helpers import MODELS_DIR
+      warp_path = MODELS_DIR / warp_name
+      with open(warp_path, 'rb') as f:
+        warp = pickle.load(f)
+      self.warp_frame_size = warp['input_specs']['input_frame'][0][1]
+      return warp['run']
     try:
       warp = load_model(str(warp_path), cache=False)
       self.warp_frame_size = warp['input_specs']['input_frame'][0][1]
