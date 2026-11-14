@@ -48,8 +48,8 @@ class TestFollowingDistance:
 
 @pytest.mark.parametrize(("personality", "expected_t_follow"), [
   (log.LongitudinalPersonality.aggressive, 0.80),
-  (log.LongitudinalPersonality.standard, 1.30),
-  (log.LongitudinalPersonality.steady, 1.50),
+  (log.LongitudinalPersonality.standard, 1.10),
+  (log.LongitudinalPersonality.steady, 1.40),
   (log.LongitudinalPersonality.relaxed, 1.70),
 ])
 def test_follow_time_gap_uses_saved_personality(personality, expected_t_follow):
